@@ -1,23 +1,40 @@
 const { Sequelize, DataTypes } = require('sequelize');
-const db = require('../database/connection');
 
-const PhrasalVerb = db.define('PhrasalVerb', {
+// Crear una instancia de Sequelize
+const sequelize = new Sequelize({
+  // Configuración de la base de datos
+  dialect: 'sqlite',
+  storage: './database/phrasal_verbs.db'
+});
+
+const PhrasalVerb = sequelize.define('PhrasalVerb', {
   id: {
-    type: DataTypes.INTEGER,
-    primaryKey: true,
-    autoIncrement: true
+    type: DataTypes.STRING,
+    allowNull: false,
+    primaryKey: true
   },
-  verb: {
+  headword: {
     type: DataTypes.STRING,
     allowNull: false
   },
-  meaning: {
+  definition: {
     type: DataTypes.STRING,
     allowNull: false
+  },
+  guide_word: {
+    type: DataTypes.STRING
   },
   example: {
-    type: DataTypes.STRING,
-    allowNull: false
+    type: DataTypes.STRING
+  },
+  phonetics: {
+    type: DataTypes.STRING
+  },
+  level: {
+    type: DataTypes.STRING
+  },
+  sublevel: {
+    type: DataTypes.STRING
   }
 });
 

@@ -1,11 +1,15 @@
 const sqlite3 = require('sqlite3').verbose();
+const path = require('path');
+
+
+const DB_PATH = path.resolve(__dirname, 'phrasal-verbs.db');
+
 
 // Ruta a tu archivo de base de datos SQLite
-const DB_PATH = 'phrasal-verbs.db';
 
-// Función para abrir la conexión a la base de datos
-function connectDatabase() {
-    return new sqlite3.Database(DB_PATH, sqlite3.OPEN_READWRITE | sqlite3.OPEN_CREATE, (err) => {
+// Función para conectar a la base de datos
+function connectToDatabase() {
+    return new sqlite3.Database(DB_PATH, sqlite3.OPEN_READWRITE, (err) => {
         if (err) {
             console.error('Error al abrir la base de datos', err.message);
         } else {
@@ -14,4 +18,4 @@ function connectDatabase() {
     });
 }
 
-module.exports = { connectDatabase };
+module.exports = { connectToDatabase };

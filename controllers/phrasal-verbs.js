@@ -1,11 +1,10 @@
-const { connectDatabase } = require('../database/config');
+const { connectToDatabase } = require('../database/config');
 
+const getPhrasalVerbs = (req, res) => {
+    // Conéctate a la base de datos
+    const db = connectToDatabase();
 
-const getPhrasalVerbs = (res) => {
-    
-    const db = connectDatabase();
-
-    // Realizar la consulta SQL
+    // Realiza la consulta SQL
     db.all("SELECT * FROM PHRASAL_VERBS", (err, rows) => {
         // Cerrar la conexión a la base de datos
         db.close();
@@ -18,19 +17,20 @@ const getPhrasalVerbs = (res) => {
     });
 }
 
+
 const addPhrasalVerb = (req, res) => {
-    const { verb, meaning, example } = req.body;
+    const { id, headword, definition, guide_word, example, phonetics, level, sublevel } = req.body;
 
-    const db = connectDatabase();
+    const db = connectToDatabase();
 
-    const sql = 'INSERT INTO phrasal_verbs (verb, meaning, example) VALUES (?, ?, ?)';
-    db.run(sql, [verb, meaning, example], function (err) {
+    const sql = 'INSERT INTO PHRASAL_VERBS (id, headword, definition, guide_word, example, phonetics, level, sublevel) VALUES (?, ?, ?, ?, ?, ?, ?, ?)';
+    db.run(sql, [id, headword, definition, guide_word, example, phonetics, level, sublevel], function (err) {
         if (err) {
             console.error('Error al insertar el phrasal verb', err.message);
             res.status(500).json({ error: 'Error al insertar el phrasal verb' });
         } else {
             console.log(`Nuevo phrasal verb insertado con ID: ${this.lastID}`);
-            res.status(201).json({ id: this.lastID, verb, meaning, example });
+            res.status(201).json({ id: this.lastID, headword, definition, guide_word, example, phonetics, level, sublevel });
         }
     });
 
