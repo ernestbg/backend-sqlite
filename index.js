@@ -2,10 +2,12 @@ const express = require('express');
 const sqlite3 = require('sqlite3').verbose();
 const fs = require('fs');
 const cors = require('cors');
+const bodyParser = require('body-parser');
 
 
 const app = express();
 app.use(cors());
+app.use(bodyParser.json());
 const PORT = 3000;
 
 const DB_PATH = 'database/phrasal-verbs.db';
@@ -21,11 +23,10 @@ if (!fs.existsSync(DB_PATH)) {
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 headword TEXT,
                 definition TEXT,
-                guide_word TEXT,
                 example TEXT,
-                phonetics TEXT,
                 level TEXT,
-                sublevel TEXT
+                sublevel TEXT,
+                UNIQUE (headword, definition)
             )`, function (err) {
                 if (err) {
                     console.error("Error al crear la tabla de phrasal verbs:", err.message);

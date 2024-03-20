@@ -4,9 +4,6 @@ const path = require('path');
 
 const DB_PATH = path.resolve(__dirname, 'phrasal-verbs.db');
 
-
-// Ruta a tu archivo de base de datos SQLite
-
 // Función para conectar a la base de datos
 function connectToDatabase() {
     return new sqlite3.Database(DB_PATH, sqlite3.OPEN_READWRITE, (err) => {
