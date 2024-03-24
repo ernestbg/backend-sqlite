@@ -22,7 +22,9 @@ if (!fs.existsSync(DB_PATH)) {
             db.run(`CREATE TABLE IF NOT EXISTS PHRASAL_VERBS (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 headword TEXT,
+                guideword TEXT,
                 definition TEXT,
+                translation TEXT,
                 example TEXT,
                 level TEXT,
                 sublevel TEXT,

@@ -2,21 +2,34 @@ const { connectToDatabase } = require('../database/config');
 
 
 const getPhrasalVerbs = (req, res) => {
-    // Conéctate a la base de datos
+    // Conectar a la base de datos SQLite
     const db = connectToDatabase();
 
-    // Realiza la consulta SQL
+    // Realizar la consulta SQL para obtener todos los phrasal verbs
     db.all("SELECT * FROM PHRASAL_VERBS", (err, rows) => {
-        // Cerrar la conexión a la base de datos
-        db.close();
-
         if (err) {
+            db.close();
             res.status(500).json({ error: err.message });
             return;
         }
-        res.json(rows);
+
+        // Realizar la consulta SQL para contar el número total de phrasal verbs
+        db.get("SELECT COUNT(*) AS total FROM PHRASAL_VERBS", (err, row) => {
+            // Cerrar la conexión a la base de datos
+            db.close();
+
+            if (err) {
+                res.status(500).json({ error: err.message });
+                return;
+            }
+
+            // Devolver los phrasal verbs y el número total en la misma respuesta
+            res.json({ phrasalVerbs: rows, total: row.total });
+        });
     });
-}
+};
+
+
 
 const getPhrasalVerbById = (req, res) => {
     const id = req.params.id; // Obtén el ID del parámetro de la ruta
@@ -92,7 +105,6 @@ const updatePhrasalVerb = (req, res) => {
 
 
 const deletePhrasalVerb = (req, res) => {
-    console.log('prueba')
     const phrasalVerbId = req.params.id; // Obtener el ID del phrasal verb de los parámetros de la solicitud
     // Abrir la conexión a la base de datos
     const db = connectToDatabase();
