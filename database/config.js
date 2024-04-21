@@ -15,4 +15,39 @@ function connectToDatabase() {
     });
 }
 
-module.exports = { connectToDatabase };
+
+function setupDatabase() {
+    const db = new sqlite3.Database(DB_PATH, (err) => {
+        if (err) {
+            console.error('Error al crear la base de datos', err.message);
+        } else {
+            console.log('Base de datos creada con éxito');
+
+            // Crear tabla Verbos
+            db.run(`CREATE TABLE IF NOT EXISTS PHRASAL_VERBS (
+        ID INTEGER PRIMARY KEY AUTOINCREMENT,
+        HEADWORD TEXT NOT NULL UNIQUE
+    );`);
+
+            // Crear tabla Significados
+            db.run(`CREATE TABLE IF NOT EXISTS DEFINITIONS (
+        ID INTEGER PRIMARY KEY AUTOINCREMENT,
+        PHRASAL_VERB_ID INTEGER,
+        DEFINITION TEXT NOT NULL,
+        LEVEL TEXT,
+        FOREIGN KEY (PHRASAL_VERB_ID) REFERENCES PHRASAL_VERBS(ID) ON DELETE CASCADE
+    );`);
+
+            // Crear tabla Ejemplos
+            db.run(`CREATE TABLE IF NOT EXISTS EXAMPLES (
+        ID INTEGER PRIMARY KEY AUTOINCREMENT,
+        DEFINITION_ID INTEGER,
+        EXAMPLE TEXT NOT NULL,
+        FOREIGN KEY (DEFINITION_ID) REFERENCES DEFINITIONS(ID) ON DELETE CASCADE
+    );`);
+        }
+    });
+}
+
+
+module.exports = { connectToDatabase, setupDatabase };
