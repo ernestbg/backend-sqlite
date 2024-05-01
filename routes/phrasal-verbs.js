@@ -8,7 +8,7 @@ const router = Router();
 router.get('/', getPhrasalVerbs);
 router.get('/:phrasalVerbId/definition/:definitionId', getPhrasalVerbById);
 router.post('/', addPhrasalVerb);
-router.patch('/:phrasalVerbId', updatePhrasalVerb);
-router.delete('/:phrasalVerbId', deletePhrasalVerb);
+router.patch('/:phrasalVerbId/definition/:definitionId', updatePhrasalVerb);
+router.delete('/:phrasalVerbId/definition/:definitionId', deletePhrasalVerb);
 
 module.exports = router;

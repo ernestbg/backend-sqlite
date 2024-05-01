@@ -48,7 +48,7 @@ const getPhrasalVerbs = (req, res) => {
             let definitionEntry = phrasalVerbsMap[phrasalVerbID].definitions.find(
                 def => def.definition === row.DefinitionText
             );
-            
+
             if (!definitionEntry) {
                 // Si la definición no existe, crear una nueva entrada
                 definitionEntry = {
@@ -135,74 +135,147 @@ const getPhrasalVerbById = (req, res) => {
     });
 };
 
-
-
-
-
-
 const addPhrasalVerb = (req, res) => {
     const { headword, definition, example, level } = req.body;
     const db = connectToDatabase();
 
-    try {
-        db.serialize(() => {
-            // Iniciar la transacción
-            db.run("BEGIN TRANSACTION");
+    if (!headword) {
+        // Si el headword es nulo, devuelve un error
+        return res.status(400).json({ error: 'El headword no puede ser nulo' });
+    }
 
-            // Verificar si el headword ya existe en la tabla PHRASAL_VERBS
-            db.get(`SELECT ID FROM PHRASAL_VERBS WHERE HEADWORD = ?`, [headword], (err, row) => {
-                if (err) throw err;
+    // Utiliza transacciones para asegurar la consistencia
+    db.serialize(() => {
+        // Iniciar la transacción
+        db.run("BEGIN TRANSACTION");
 
+        // Verificar si existe la combinación de headword y definition en la base de datos
+        db.get(`SELECT pv.ID, d.ID AS DefinitionID FROM PHRASAL_VERBS pv
+                JOIN DEFINITIONS d ON pv.ID = d.PHRASAL_VERB_ID
+                WHERE pv.HEADWORD = ? AND d.DEFINITION = ?`, [headword, definition], (err, row) => {
+            if (err) {
+                // En caso de error, realiza un rollback y cierra la conexión
+                db.run("ROLLBACK", () => {
+                    db.close();
+                });
+                console.error('Error al verificar unicidad:', err.message);
+                return res.status(500).json({ error: 'Error al verificar unicidad' });
+            }
+
+            if (row) {
+                // Si la combinación de headword y definition ya existe, realiza rollback
+                db.run("ROLLBACK", () => {
+                    db.close();
+                });
+                return res.status(409).json({ error: 'Ya existe un phrasal verb con la combinación de headword y definition' });
+            } else {
+                // Si la combinación de headword y definition no existe, inserta el phrasal verb
                 let phrasalVerbID;
+                let definitionID;
 
-                if (row) {
-                    // Si el headword ya existe, reutilizar su ID
-                    phrasalVerbID = row.ID;
-                } else {
-                    // Si el headword no existe, insertarlo en PHRASAL_VERBS
-                    db.run(`INSERT INTO PHRASAL_VERBS (HEADWORD, LEVEL) VALUES (?, ?)`, [headword, level], function (err) {
-                        if (err) throw err;
-                        phrasalVerbID = this.lastID;
+                // Verifica si el headword ya existe en PHRASAL_VERBS
+                db.get(`SELECT ID FROM PHRASAL_VERBS WHERE HEADWORD = ?`, [headword], (err, row) => {
+                    if (err) {
+                        // En caso de error, realiza un rollback y cierra la conexión
+                        db.run("ROLLBACK", () => {
+                            db.close();
+                        });
+                        console.error('Error al verificar headword:', err.message);
+                        return res.status(500).json({ error: 'Error al verificar headword' });
+                    }
+
+                    if (row) {
+                        // Si el headword ya existe, reutilizar su ID
+                        phrasalVerbID = row.ID;
+                        insertDefinition();
+                    } else {
+                        // Si el headword no existe, insertarlo en PHRASAL_VERBS
+                        db.run(`INSERT INTO PHRASAL_VERBS (HEADWORD) VALUES (?)`, [headword], function (err) {
+                            if (err) {
+                                // En caso de error, realiza un rollback y cierra la conexión
+                                db.run("ROLLBACK", () => {
+                                    db.close();
+                                });
+                                console.error('Error al insertar en PHRASAL_VERBS:', err.message);
+                                return res.status(500).json({ error: 'Error al insertar headword' });
+                            }
+                            phrasalVerbID = this.lastID;
+                            console.log('phrasalVerbID:', phrasalVerbID);
+                            insertDefinition();
+                        });
+                    }
+                });
+
+                // Función para insertar la definición y manejar el ejemplo
+                function insertDefinition() {
+                    // Insertar la definición en DEFINITIONS
+                    db.run(`INSERT INTO DEFINITIONS (PHRASAL_VERB_ID, DEFINITION, LEVEL) VALUES (?, ?, ?)`, [phrasalVerbID, definition, level], function (err) {
+                        if (err) {
+                            // En caso de error, realiza un rollback y cierra la conexión
+                            db.run("ROLLBACK", () => {
+                                db.close();
+                            });
+                            console.error('Error al insertar en DEFINITIONS:', err.message);
+                            return res.status(500).json({ error: 'Error al insertar definición' });
+                        }
+
+                        definitionID = this.lastID;
+
+                        // Insertar el ejemplo en EXAMPLES si se proporciona
+                        if (example) {
+                            db.run(`INSERT INTO EXAMPLES (DEFINITION_ID, EXAMPLE) VALUES (?, ?)`, [definitionID, example], function (err) {
+                                if (err) {
+                                    // En caso de error, realiza un rollback y cierra la conexión
+                                    db.run("ROLLBACK", () => {
+                                        db.close();
+                                    });
+                                    console.error('Error al insertar en EXAMPLES:', err.message);
+                                    return res.status(500).json({ error: 'Error al insertar ejemplo' });
+                                }
+
+                                // Confirmar la transacción
+                                db.run("COMMIT", function (err) {
+                                    if (err) {
+                                        console.error('Error al confirmar la transacción:', err.message);
+                                        db.run("ROLLBACK");
+                                        db.close();
+                                        return res.status(500).json({ error: 'Error al confirmar la transacción' });
+                                    }
+
+                                    // Cerrar la conexión a la base de datos
+                                    db.close();
+                                    res.status(201).json({ phrasalVerbID, definitionID, exampleID: this.lastID });
+                                });
+                            });
+                        } else {
+                            // Si no se proporciona ejemplo, confirmamos la transacción directamente
+                            db.run("COMMIT", function (err) {
+                                if (err) {
+                                    console.error('Error al confirmar la transacción:', err.message);
+                                    db.run("ROLLBACK");
+                                    db.close();
+                                    return res.status(500).json({ error: 'Error al confirmar la transacción' });
+                                }
+
+                                // Cerrar la conexión a la base de datos
+                                db.close();
+                                res.status(201).json({ phrasalVerbID, definitionID });
+                            });
+                        }
                     });
                 }
-
-                // Insertar la definición en DEFINITIONS
-                db.run(`INSERT INTO DEFINITIONS (PHRASAL_VERB_ID, DEFINITION, LEVEL) VALUES (?, ?, ?)`, [phrasalVerbID, definition, level], function (err) {
-                    if (err) throw err;
-
-                    const definitionID = this.lastID;
-
-                    // Insertar el ejemplo en EXAMPLES
-                    db.run(`INSERT INTO EXAMPLES (DEFINITION_ID, EXAMPLE) VALUES (?, ?)`, [definitionID, example], function (err) {
-                        if (err) throw err;
-
-                        // Confirmar la transacción
-                        db.run("COMMIT", err => {
-                            if (err) throw err;
-                            
-                            // Cerrar la conexión a la base de datos
-                            db.close();
-                            res.status(201).json({ phrasalVerbID, definitionID, exampleID: this.lastID });
-                        });
-                    });
-                });
-            });
+            }
         });
-    } catch (err) {
-        // En caso de error, realiza un rollback y cierra la conexión
-        db.run("ROLLBACK", () => {
-            db.close();
-        });
-        console.error('Error en la operación de inserción:', err.message);
-        res.status(500).json({ error: 'Error en la operación de inserción' });
-    }
+    });
 };
 
 
 
 
+
+
 const updatePhrasalVerb = (req, res) => {
-    const id = req.params.id; // Este es el ID del phrasal verb
+    const { phrasalVerbId, definitionId } = req.params; // Recupera los IDs de la ruta
     const { headword, definition, example, level } = req.body;
 
     // Conectar a la base de datos
@@ -216,76 +289,136 @@ const updatePhrasalVerb = (req, res) => {
             return res.status(500).json({ error: 'Error al iniciar la transacción' });
         }
 
-        // Actualizar el phrasal verb en PHRASAL_VERBS
-        db.run(`UPDATE PHRASAL_VERBS SET HEADWORD = ? WHERE ID = ?`, [headword, id], function (err) {
-            if (err) {
-                console.error('Error al actualizar en PHRASAL_VERBS:', err.message);
-                db.run("ROLLBACK");
-                db.close();
-                return res.status(500).json({ error: 'Error al actualizar el phrasal verb' });
-            }
+        // Actualizar el headword en PHRASAL_VERBS solo si se proporciona
+        if (headword) {
+            db.run(`UPDATE PHRASAL_VERBS SET HEADWORD = ? WHERE ID = ?`, [headword, phrasalVerbId], function (err) {
+                if (err) {
+                    console.error('Error al actualizar en PHRASAL_VERBS:', err.message);
+                    db.run("ROLLBACK");
+                    db.close();
+                    return res.status(500).json({ error: 'Error al actualizar el headword' });
+                }
+            });
+        }
 
-            // Actualizar la definición en DEFINITIONS
-            db.run(`UPDATE DEFINITIONS SET DEFINITION = ?, LEVEL = ? WHERE PHRASAL_VERB_ID = ?`, [definition, level, id], function (err) {
+        // Actualizar la definición y nivel en DEFINITIONS solo si se proporcionan
+        if (definition || level) {
+            db.run(`UPDATE DEFINITIONS SET DEFINITION = COALESCE(?, DEFINITION), LEVEL = COALESCE(?, LEVEL) WHERE ID = ?`, [definition, level, definitionId], function (err) {
                 if (err) {
                     console.error('Error al actualizar en DEFINITIONS:', err.message);
                     db.run("ROLLBACK");
                     db.close();
                     return res.status(500).json({ error: 'Error al actualizar la definición' });
                 }
-
-                // Actualizar el ejemplo en EXAMPLES
-                db.run(`UPDATE EXAMPLES SET EXAMPLE = ? WHERE DEFINITION_ID = ?`, [example, id], function (err) {
-                    if (err) {
-                        console.error('Error al actualizar en EXAMPLES:', err.message);
-                        db.run("ROLLBACK");
-                        db.close();
-                        return res.status(500).json({ error: 'Error al actualizar el ejemplo' });
-                    }
-
-                    // Confirmar la transacción
-                    db.run("COMMIT", function (err) {
-                        if (err) {
-                            console.error('Error al confirmar la transacción:', err.message);
-                            db.run("ROLLBACK");
-                            db.close();
-                            return res.status(500).json({ error: 'Error al confirmar la transacción' });
-                        }
-
-                        // Cerrar la conexión a la base de datos
-                        db.close();
-                        res.status(200).json({ id, headword, definition, example, level });
-                    });
-                });
             });
+        }
+
+        // Actualizar el ejemplo en EXAMPLES solo si se proporciona
+        if (example !== undefined) {
+            db.run(`UPDATE EXAMPLES SET EXAMPLE = ? WHERE DEFINITION_ID = ?`, [example, definitionId], function (err) {
+                if (err) {
+                    console.error('Error al actualizar en EXAMPLES:', err.message);
+                    db.run("ROLLBACK");
+                    db.close();
+                    return res.status(500).json({ error: 'Error al actualizar el ejemplo' });
+                }
+            });
+        }
+
+        // Confirmar la transacción
+        db.run("COMMIT", function (err) {
+            if (err) {
+                console.error('Error al confirmar la transacción:', err.message);
+                db.run("ROLLBACK");
+                db.close();
+                return res.status(500).json({ error: 'Error al confirmar la transacción' });
+            }
+
+            // Cerrar la conexión a la base de datos
+            db.close();
+            res.status(200).json({ phrasalVerbId, definitionId, headword, definition, example, level });
         });
     });
 };
 
 
-
 const deletePhrasalVerb = (req, res) => {
-    const phrasalVerbId = req.params.id; // Obtener el ID del phrasal verb de los parámetros de la solicitud
-    // Abrir la conexión a la base de datos
+    const { phrasalVerbId, definitionId } = req.params;
     const db = connectToDatabase();
 
-    // Preparar la consulta SQL para eliminar el phrasal verb con el ID especificado
-    const sql = 'DELETE FROM phrasal_verbs WHERE id = ?';
-
-    // Ejecutar la consulta SQL con el ID del phrasal verb a eliminar
-    db.run(sql, [phrasalVerbId], function (err) {
+    // Iniciar transacción
+    db.run("BEGIN TRANSACTION", (err) => {
         if (err) {
-            console.error('Error al eliminar el phrasal verb', err.message);
-            res.status(500).json({ error: 'Error al eliminar el phrasal verb' });
-        } else {
-            console.log(`Phrasal verb con ID ${phrasalVerbId} eliminado correctamente`);
-            res.status(200).json({ message: `Phrasal verb con ID ${phrasalVerbId} eliminado correctamente` });
+            console.error('Error al iniciar la transacción:', err.message);
+            db.close();
+            return res.status(500).json({ error: 'Error al iniciar la transacción' });
         }
-    });
+        // Verificar cuántas definiciones están asociadas con `phrasalVerbId`
+        db.get('SELECT COUNT(*) as count FROM DEFINITIONS WHERE PHRASAL_VERB_ID = ?', [phrasalVerbId], (err, row) => {
+            if (err) {
+                db.run("ROLLBACK", () => db.close());
+                console.error('Error al verificar definiciones asociadas:', err.message);
+                return res.status(500).json({ error: 'Error al verificar definiciones asociadas' });
+            }
 
-    // Cerrar la conexión a la base de datos después de realizar la eliminación
-    db.close();
+            // Si solo hay una definición asociada con `phrasalVerbId`, eliminar tanto la definición como el phrasal verb
+            if (row.count === 1) {
+                db.run(`DELETE FROM DEFINITIONS WHERE ID = ?`, [definitionId], (err) => {
+                    if (err) {
+                        db.run("ROLLBACK", () => db.close());
+                        console.error('Error al eliminar la definición:', err.message);
+                        return res.status(500).json({ error: 'Error al eliminar la definición' });
+                    }
+
+                    db.run(`DELETE FROM PHRASAL_VERBS WHERE ID = ?`, [phrasalVerbId], (err) => {
+                        if (err) {
+                            db.run("ROLLBACK", () => db.close());
+                            console.error('Error al eliminar el phrasal verb:', err.message);
+                            return res.status(500).json({ error: 'Error al eliminar el phrasal verb' });
+                        }
+
+                        // Confirmar la transacción
+                        db.run("COMMIT", (err) => {
+                            if (err) {
+                                db.run("ROLLBACK", () => db.close());
+                                console.error('Error al confirmar la transacción:', err.message);
+                                return res.status(500).json({ error: 'Error al confirmar la transacción' });
+                            }
+
+                            // Cerrar conexión y responder con éxito
+                            db.close();
+                            res.status(200).json({ message: `Phrasal verb con ID ${phrasalVerbId} y definition ID ${definitionId} eliminados correctamente` });
+                        });
+                    });
+                });
+            } else {
+                // Si hay más de una definición asociada, eliminar solo la definición
+                db.run('DELETE FROM DEFINITIONS WHERE ID = ?', [definitionId], (err) => {
+                    if (err) {
+                        db.run("ROLLBACK", () => db.close());
+                        console.error('Error al eliminar la definición:', err.message);
+                        return res.status(500).json({ error: 'Error al eliminar la definición' });
+                    }
+
+                    // Confirmar la transacción
+                    db.run("COMMIT", (err) => {
+                        if (err) {
+                            db.run("ROLLBACK", () => db.close());
+                            console.error('Error al confirmar la transacción:', err.message);
+                            return res.status(500).json({ error: 'Error al confirmar la transacción' });
+                        }
+
+                        // Cerrar conexión y responder con éxito
+                        db.close();
+                        res.status(200).json({ message: `Definition con ID ${definitionId} eliminada correctamente.` });
+                    });
+                });
+            }
+        });
+    });
 };
+
+
 
 
 
