@@ -136,7 +136,7 @@ const getPhrasalVerbById = (req, res) => {
 };
 
 const addPhrasalVerb = (req, res) => {
-    const { headword, definition, example, level } = req.body;
+    const { headword, definition, examples, level } = req.body;
     const db = connectToDatabase();
 
     if (!headword) {
@@ -221,68 +221,53 @@ const addPhrasalVerb = (req, res) => {
 
                         definitionID = this.lastID;
 
-                        // Insertar el ejemplo en EXAMPLES si se proporciona
-                        if (example) {
-                            db.run(`INSERT INTO EXAMPLES (DEFINITION_ID, EXAMPLE) VALUES (?, ?)`, [definitionID, example], function (err) {
-                                if (err) {
-                                    // En caso de error, realiza un rollback y cierra la conexión
-                                    db.run("ROLLBACK", () => {
-                                        db.close();
-                                    });
-                                    console.error('Error al insertar en EXAMPLES:', err.message);
-                                    return res.status(500).json({ error: 'Error al insertar ejemplo' });
-                                }
-
-                                // Confirmar la transacción
-                                db.run("COMMIT", function (err) {
+                        // Si hay ejemplos, recorrerlos e insertarlos
+                        if (Array.isArray(examples)) {
+                            // Recorrer cada ejemplo y realizar la inserción
+                            examples.forEach((example) => {
+                                db.run(`INSERT INTO EXAMPLES (DEFINITION_ID, EXAMPLE) VALUES (?, ?)`, [definitionID, example], function (err) {
                                     if (err) {
-                                        console.error('Error al confirmar la transacción:', err.message);
-                                        db.run("ROLLBACK");
-                                        db.close();
-                                        return res.status(500).json({ error: 'Error al confirmar la transacción' });
+                                        // En caso de error, realiza un rollback y cierra la conexión
+                                        db.run("ROLLBACK", () => {
+                                            db.close();
+                                        });
+                                        console.error('Error al insertar en EXAMPLES:', err.message);
+                                        return res.status(500).json({ error: 'Error al insertar ejemplos' });
                                     }
-
-                                    // Cerrar la conexión a la base de datos
-                                    db.close();
-                                    res.status(201).json({ phrasalVerbID, definitionID, exampleID: this.lastID });
                                 });
                             });
-                        } else {
-                            // Si no se proporciona ejemplo, confirmamos la transacción directamente
-                            db.run("COMMIT", function (err) {
-                                if (err) {
-                                    console.error('Error al confirmar la transacción:', err.message);
-                                    db.run("ROLLBACK");
-                                    db.close();
-                                    return res.status(500).json({ error: 'Error al confirmar la transacción' });
-                                }
-
-                                // Cerrar la conexión a la base de datos
-                                db.close();
-                                res.status(201).json({ phrasalVerbID, definitionID });
-                            });
                         }
+
+                        // Confirmar la transacción
+                        db.run("COMMIT", function (err) {
+                            if (err) {
+                                console.error('Error al confirmar la transacción:', err.message);
+                                db.run("ROLLBACK");
+                                db.close();
+                                return res.status(500).json({ error: 'Error al confirmar la transacción' });
+                            }
+
+                            // Cerrar la conexión a la base de datos
+                            db.close();
+                            res.status(201).json({ phrasalVerbID, definitionID });
+                        });
                     });
                 }
+
             }
         });
     });
 };
 
-
-
-
-
-
 const updatePhrasalVerb = (req, res) => {
-    const { phrasalVerbId, definitionId } = req.params; // Recupera los IDs de la ruta
-    const { headword, definition, example, level } = req.body;
+    const { phrasalVerbId, definitionId } = req.params; // Obtener los IDs de los parámetros de la ruta
+    const { headword, definition, examples, level } = req.body;
 
     // Conectar a la base de datos
     const db = connectToDatabase();
 
     // Iniciar una transacción
-    db.run("BEGIN TRANSACTION", function (err) {
+    db.run("BEGIN TRANSACTION", (err) => {
         if (err) {
             console.error('Error al iniciar la transacción:', err.message);
             db.close();
@@ -291,7 +276,7 @@ const updatePhrasalVerb = (req, res) => {
 
         // Actualizar el headword en PHRASAL_VERBS solo si se proporciona
         if (headword) {
-            db.run(`UPDATE PHRASAL_VERBS SET HEADWORD = ? WHERE ID = ?`, [headword, phrasalVerbId], function (err) {
+            db.run(`UPDATE PHRASAL_VERBS SET HEADWORD = ? WHERE ID = ?`, [headword, phrasalVerbId], (err) => {
                 if (err) {
                     console.error('Error al actualizar en PHRASAL_VERBS:', err.message);
                     db.run("ROLLBACK");
@@ -301,9 +286,9 @@ const updatePhrasalVerb = (req, res) => {
             });
         }
 
-        // Actualizar la definición y nivel en DEFINITIONS solo si se proporcionan
+        // Actualizar la definición y el nivel en DEFINITIONS solo si se proporcionan
         if (definition || level) {
-            db.run(`UPDATE DEFINITIONS SET DEFINITION = COALESCE(?, DEFINITION), LEVEL = COALESCE(?, LEVEL) WHERE ID = ?`, [definition, level, definitionId], function (err) {
+            db.run(`UPDATE DEFINITIONS SET DEFINITION = COALESCE(?, DEFINITION), LEVEL = COALESCE(?, LEVEL) WHERE ID = ?`, [definition, level, definitionId], (err) => {
                 if (err) {
                     console.error('Error al actualizar en DEFINITIONS:', err.message);
                     db.run("ROLLBACK");
@@ -313,33 +298,116 @@ const updatePhrasalVerb = (req, res) => {
             });
         }
 
-        // Actualizar el ejemplo en EXAMPLES solo si se proporciona
-        if (example !== undefined) {
-            db.run(`UPDATE EXAMPLES SET EXAMPLE = ? WHERE DEFINITION_ID = ?`, [example, definitionId], function (err) {
+        // Manejar examples
+        if (Array.isArray(examples)) {
+            // Primero, obtenemos todos los examples actuales de la base de datos
+            db.all(`SELECT ID, EXAMPLE FROM EXAMPLES WHERE DEFINITION_ID = ?`, [definitionId], (err, currentExamples) => {
                 if (err) {
-                    console.error('Error al actualizar en EXAMPLES:', err.message);
                     db.run("ROLLBACK");
                     db.close();
-                    return res.status(500).json({ error: 'Error al actualizar el ejemplo' });
+                    console.error('Error al obtener los ejemplos actuales:', err.message);
+                    return res.status(500).json({ error: 'Error al obtener ejemplos actuales' });
                 }
+
+                // Crear un mapa de los examples actuales
+                const currentExamplesMap = currentExamples.reduce((map, example) => {
+                    map[example.ID] = example.EXAMPLE;
+                    return map;
+                }, {});
+
+                // Comparar con los examples recibidos del frontend
+                const examplesToUpdate = [];
+                const examplesToAdd = [];
+
+                for (let i = 0; i < examples.length; i++) {
+                    const example = examples[i];
+
+                    // Verificar si el example ya existe
+                    const exampleId = Object.keys(currentExamplesMap).find(id => currentExamplesMap[id] === example);
+                    
+                    if (exampleId) {
+                        // El example existe, actualízalo si es diferente
+                        if (currentExamplesMap[exampleId] !== example) {
+                            examplesToUpdate.push({ example, exampleId });
+                        }
+
+                        // Elimina del mapa para que no se considere para eliminación
+                        delete currentExamplesMap[exampleId];
+                    } else {
+                        // El example es nuevo, agrégalo
+                        examplesToAdd.push(example);
+                    }
+                }
+
+                // Eliminar examples que ya no están presentes en el array del frontend
+                const examplesToRemove = Object.keys(currentExamplesMap);
+                examplesToRemove.forEach((exampleId) => {
+                    db.run(`DELETE FROM EXAMPLES WHERE ID = ?`, [exampleId], (err) => {
+                        if (err) {
+                            db.run("ROLLBACK");
+                            db.close();
+                            console.error('Error al eliminar example:', err.message);
+                            return res.status(500).json({ error: 'Error al eliminar example' });
+                        }
+                    });
+                });
+
+                // Actualizar examples existentes
+                examplesToUpdate.forEach(({ example, exampleId }) => {
+                    db.run(`UPDATE EXAMPLES SET EXAMPLE = ? WHERE ID = ?`, [example, exampleId], (err) => {
+                        if (err) {
+                            db.run("ROLLBACK");
+                            db.close();
+                            console.error('Error al actualizar example:', err.message);
+                            return res.status(500).json({ error: 'Error al actualizar example' });
+                        }
+                    });
+                });
+
+                // Añadir nuevos examples
+                examplesToAdd.forEach((example) => {
+                    db.run(`INSERT INTO EXAMPLES (DEFINITION_ID, EXAMPLE) VALUES (?, ?)`, [definitionId, example], (err) => {
+                        if (err) {
+                            db.run("ROLLBACK");
+                            db.close();
+                            console.error('Error al agregar example:', err.message);
+                            return res.status(500).json({ error: 'Error al agregar example' });
+                        }
+                    });
+                });
+
+                // Confirmar la transacción
+                db.run("COMMIT", (err) => {
+                    if (err) {
+                        db.run("ROLLBACK");
+                        db.close();
+                        console.error('Error al confirmar la transacción:', err.message);
+                        return res.status(500).json({ error: 'Error al confirmar la transacción' });
+                    }
+
+                    // Cerrar la conexión a la base de datos
+                    db.close();
+                    res.status(200).json({ phrasalVerbId, definitionId, headword, definition, examples, level });
+                });
+            });
+        } else {
+            // Si no se proporciona un array de examples, simplemente confirma la transacción
+            db.run("COMMIT", (err) => {
+                if (err) {
+                    db.run("ROLLBACK");
+                    db.close();
+                    console.error('Error al confirmar la transacción:', err.message);
+                    return res.status(500).json({ error: 'Error al confirmar la transacción' });
+                }
+
+                // Cerrar la conexión a la base de datos
+                db.close();
+                res.status(200).json({ phrasalVerbId, definitionId, headword, definition, examples, level });
             });
         }
-
-        // Confirmar la transacción
-        db.run("COMMIT", function (err) {
-            if (err) {
-                console.error('Error al confirmar la transacción:', err.message);
-                db.run("ROLLBACK");
-                db.close();
-                return res.status(500).json({ error: 'Error al confirmar la transacción' });
-            }
-
-            // Cerrar la conexión a la base de datos
-            db.close();
-            res.status(200).json({ phrasalVerbId, definitionId, headword, definition, example, level });
-        });
     });
 };
+
 
 
 const deletePhrasalVerb = (req, res) => {
@@ -417,10 +485,6 @@ const deletePhrasalVerb = (req, res) => {
         });
     });
 };
-
-
-
-
 
 
 module.exports = { getPhrasalVerbs, getPhrasalVerbById, addPhrasalVerb, updatePhrasalVerb, deletePhrasalVerb }

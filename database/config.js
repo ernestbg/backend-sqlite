@@ -9,9 +9,7 @@ function connectToDatabase() {
     return new sqlite3.Database(DB_PATH, sqlite3.OPEN_READWRITE, (err) => {
         if (err) {
             console.error('Error al abrir la base de datos', err.message);
-        } else {
-            console.log('Conexión establecida con la base de datos SQLite');
-        }
+        } 
     });
 }
 
@@ -31,11 +29,13 @@ function setupDatabase() {
 
             // Crear tabla Significados
             db.run(`CREATE TABLE IF NOT EXISTS DEFINITIONS (
-        ID INTEGER PRIMARY KEY AUTOINCREMENT,
-        PHRASAL_VERB_ID INTEGER,
-        DEFINITION TEXT,
-        LEVEL TEXT
-    );`);
+    ID INTEGER PRIMARY KEY AUTOINCREMENT,
+    PHRASAL_VERB_ID INTEGER,
+    DEFINITION TEXT,
+    LEVEL TEXT,
+    FOREIGN KEY (PHRASAL_VERB_ID) REFERENCES PHRASAL_VERBS(ID) ON DELETE NO ACTION
+);`);
+
 
             // Crear tabla Ejemplos
             db.run(`CREATE TABLE IF NOT EXISTS EXAMPLES (
